@@ -8,6 +8,12 @@ import google.generativeai as genai
 import json
 from flask_cors import CORS
 import streamlit as st
+from dotenv import load_dotenv
+
+
+# Load .env file
+load_dotenv()
+
 
 app = Flask(__name__)
 CORS(app)  # allow Streamlit (different port) to call this
