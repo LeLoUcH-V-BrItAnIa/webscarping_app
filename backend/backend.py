@@ -13,7 +13,7 @@ app = Flask(__name__)
 CORS(app)  # allow Streamlit (different port) to call this
 
 # ---- Gemini setup ----
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+genai.configure(api_key=os.getenv["GOOGLE_API_KEY"])
 model = genai.GenerativeModel("models/gemma-3n-e2b-it")  # or gemini-1.5-pro
 
 
