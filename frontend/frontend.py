@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import json
 
-BACKEND_URL = "http://localhost:5000"  # Flask
+BACKEND_URL = "https://webscarping-app.onrender.com"  # Flask
 
 st.set_page_config(page_title="AI Notes Maker", layout="wide")
 st.title("📚 AI Notes Maker")
