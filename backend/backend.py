@@ -89,65 +89,139 @@ def scrape():
 # ---- Route 2: answer questions with Gemini ----
 @app.post("/answer-questions")
 def answer_questions():
-    data = request.get_json()
-    page_text = data.get("pageText", "")
-    questions = data.get("questions", [])
 
-    if not page_text or not questions:
-        return jsonify({"error": "pageText and questions are required"}), 400
+    try:
+        data = request.get_json(force=True)
 
-    # Prepare prompt
-    questions_block = "\n".join(
-        [f"{i+1}. {q}" for i, q in enumerate(questions)]
-    )
+        page_text = str(data.get("pageText", ""))
+        questions = data.get("questions", [])
 
-    prompt = f"""
-You are an exam-notes assistant.
+        if not page_text or not questions:
+            return jsonify({
+                "error": "pageText and questions are required"
+            }), 400
 
-You are given the text of a single web page (PAGE_TEXT). 
-You must answer each question ONLY using this text. 
-If the answer is not clearly available, mark found = false.
+        # Prepare questions block
+        questions_block = "\n".join(
+            [f"{i+1}. {q}" for i, q in enumerate(questions)]
+        )
 
-Return a JSON array. Each element must be:
-{{
-  "question": "...",
-  "answer": "...",
-  "found": true or false,
-  "source_snippet": "copy the exact lines or phrases you used from PAGE_TEXT, if any"
-}}
+        # Simpler prompt for free-tier Gemma
+        prompt = f"""
+Answer the questions using ONLY the given PAGE_TEXT.
 
 Rules:
-- Answer length: about 150–250 words if found do not need to add points just make it longer .
-- Do NOT add knowledge from outside PAGE_TEXT.
-- Every Question must be worth 15 marks.
-- If not found, answer: "Not clearly available in the given page."
+- Answer in simple paragraphs
+- Around 150 to 250 words
+- Do not use outside knowledge
+- If answer is not available say:
+  Not clearly available in the given page
+- Return ONLY valid JSON
+- No markdown
+- No explanation
+
+JSON format:
+[
+  {{
+    "question": "Question here",
+    "answer": "Answer here",
+    "found": true
+  }}
+]
 
 PAGE_TEXT:
-\"\"\"{page_text}\"\"\"
+{page_text[:15000]}
 
 QUESTIONS:
 {questions_block}
 """
 
-    try:
         response = model.generate_content(prompt)
+
         if not response.text:
-            return jsonify({"error": "Empty response from Gemini"}), 500
-        raw_text = response.text
+            return jsonify({
+                "error": "Empty response from model"
+            }), 500
+
+        raw_text = response.text.strip()
+
         print("RAW GEMINI OUTPUT:\n", raw_text)
-        import re, json
+
+        import re
+        import json
+
+        # Remove markdown fences
         cleaned = re.sub(r"```json|```", "", raw_text).strip()
-        # The model should return JSON. Try to parse:
-        qa_list = json.loads(cleaned)
-        # qa_list = parse_llm_json(cleaned)
 
-        return jsonify({"qa": qa_list})
+        # -------- SAFE JSON EXTRACTION --------
 
-        # return jsonify({"qa": qa_list})
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+
+        if start == -1 or end == -1:
+
+            # FALLBACK MANUAL FORMAT
+            qa_list = []
+
+            split_answers = cleaned.split("Question:")
+
+            for block in split_answers:
+
+                block = block.strip()
+
+                if not block:
+                    continue
+
+                lines = block.split("\n")
+
+                question = lines[0].strip()
+
+                answer = "\n".join(lines[1:]).strip()
+
+                qa_list.append({
+                    "question": question,
+                    "answer": answer,
+                    "found": "Not clearly available" not in answer
+                })
+
+            return jsonify({"qa": qa_list})
+
+        json_text = cleaned[start:end + 1]
+
+        try:
+            qa_list = json.loads(json_text)
+
+        except Exception:
+
+            # -------- FALLBACK FIXER --------
+
+            json_text = json_text.replace("\n", " ")
+
+            json_text = re.sub(r",\s*]", "]", json_text)
+
+            qa_list = json.loads(json_text)
+
+        # Final cleanup
+        cleaned_qa = []
+
+        for item in qa_list:
+
+            cleaned_qa.append({
+                "question": str(item.get("question", "")).strip(),
+                "answer": str(item.get("answer", "")).strip(),
+                "found": bool(item.get("found", True))
+            })
+
+        return jsonify({"qa": cleaned_qa})
+
     except Exception as e:
+
         print("ERROR:", str(e))
-        # debug: you might want to log raw_text when parsing fails
-        return jsonify({"error": str(e)}), 500
+
+        return jsonify({
+            "error": "Failed to answer questions",
+            "details": str(e)
+        }), 500
 
 
 # ---- Route 3: export DOCX ----
