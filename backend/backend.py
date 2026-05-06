@@ -101,36 +101,26 @@ def answer_questions():
                 "error": "pageText and questions are required"
             }), 400
 
-        # Prepare questions block
         questions_block = "\n".join(
             [f"{i+1}. {q}" for i, q in enumerate(questions)]
         )
 
-        # Simpler prompt for free-tier Gemma
         prompt = f"""
-Answer the questions using ONLY the given PAGE_TEXT.
+Answer the following questions using ONLY the given text.
 
 Rules:
-- Answer in simple paragraphs
-- Around 150 to 250 words
-- Do not use outside knowledge
-- If answer is not available say:
-  Not clearly available in the given page
-- Return ONLY valid JSON
+- Give detailed paragraph answers
+- Around 150-250 words
 - No markdown
-- No explanation
+- No JSON
+- No bullet points
+- Start every answer EXACTLY like this:
 
-JSON format:
-[
-  {{
-    "question": "Question here",
-    "answer": "Answer here",
-    "found": true
-  }}
-]
+Question:
+Answer:
 
-PAGE_TEXT:
-{page_text[:15000]}
+TEXT:
+{page_text[:12000]}
 
 QUESTIONS:
 {questions_block}
@@ -138,81 +128,57 @@ QUESTIONS:
 
         response = model.generate_content(prompt)
 
-        if not response.text:
-            return jsonify({
-                "error": "Empty response from model"
-            }), 500
-
         raw_text = response.text.strip()
 
-        print("RAW GEMINI OUTPUT:\n", raw_text)
+        print("RAW OUTPUT:")
+        print(raw_text)
 
         import re
-        import json
 
-        # Remove markdown fences
-        cleaned = re.sub(r"```json|```", "", raw_text).strip()
+        qa_list = []
 
-        # -------- SAFE JSON EXTRACTION --------
+        blocks = re.split(r"Question\s*:", raw_text)
 
-        start = cleaned.find("[")
-        end = cleaned.rfind("]")
+        for block in blocks:
 
-        if start == -1 or end == -1:
+            block = block.strip()
 
-            # FALLBACK MANUAL FORMAT
-            qa_list = []
+            if not block:
+                continue
 
-            split_answers = cleaned.split("Question:")
+            if "Answer:" in block:
 
-            for block in split_answers:
+                parts = block.split("Answer:", 1)
 
-                block = block.strip()
+                question = parts[0].strip()
+                answer = parts[1].strip()
 
-                if not block:
-                    continue
+            else:
 
                 lines = block.split("\n")
 
                 question = lines[0].strip()
-
                 answer = "\n".join(lines[1:]).strip()
 
-                qa_list.append({
-                    "question": question,
-                    "answer": answer,
-                    "found": "Not clearly available" not in answer
-                })
+            question = re.sub(r"^\d+\.\s*", "", question)
 
-            return jsonify({"qa": qa_list})
+            found = True
 
-        json_text = cleaned[start:end + 1]
+            if (
+                "not clearly available" in answer.lower()
+                or len(answer) < 20
+            ):
+                found = False
 
-        try:
-            qa_list = json.loads(json_text)
-
-        except Exception:
-
-            # -------- FALLBACK FIXER --------
-
-            json_text = json_text.replace("\n", " ")
-
-            json_text = re.sub(r",\s*]", "]", json_text)
-
-            qa_list = json.loads(json_text)
-
-        # Final cleanup
-        cleaned_qa = []
-
-        for item in qa_list:
-
-            cleaned_qa.append({
-                "question": str(item.get("question", "")).strip(),
-                "answer": str(item.get("answer", "")).strip(),
-                "found": bool(item.get("found", True))
+            qa_list.append({
+                "question": question,
+                "answer": answer,
+                "found": found
             })
 
-        return jsonify({"qa": cleaned_qa})
+        return jsonify({
+            "qa": qa_list
+        })
 
     except Exception as e:
 
