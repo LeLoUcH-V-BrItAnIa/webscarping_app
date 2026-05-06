@@ -185,84 +185,103 @@ def generate_questions():
     try:
         data = request.get_json(force=True)
 
-        page_text = data.get("pageText", "")
-        num_questions = data.get("num_questions", 5)
-        marks = data.get("marks", 10)
+        page_text = str(data.get("pageText", ""))
+        num_questions = int(data.get("num_questions", 5))
+        marks = int(data.get("marks", 10))
         difficulty = data.get("difficulty", "exam")
 
         if not page_text:
             return jsonify({"error": "pageText is required"}), 400
 
+        # Smaller cleaner prompt for free-tier Gemma
         prompt = f"""
-Generate {num_questions} university exam questions from PAGE_TEXT.
+Generate {num_questions} university exam questions from the text below.
 
-IMPORTANT RULES:
-- Return ONLY valid JSON
+Rules:
+- Questions only
+- No answers
 - No markdown
-- No explanation
-- No ```json
-- Output must start with [
-- Output must end with ]
-- Each item must be a simple string
-- Do not use brackets inside questions
-- Do not use numbering
+- One question per line
+- Suitable for {marks} marks
+- Difficulty level: {difficulty}
 
-Example:
-[
-  "Explain operating system functions",
-  "Describe process scheduling"
-]
-
-PAGE_TEXT:
+TEXT:
 {page_text[:12000]}
 """
 
         response = model.generate_content(prompt)
 
         if not response.text:
-            return jsonify({"error": "Empty response from Gemini"}), 500
+            return jsonify({"error": "Empty response from model"}), 500
 
         raw_text = response.text.strip()
 
         print("RAW GEMINI QUESTIONS OUTPUT:\n", raw_text)
 
-        import re
-        import json
+        # -------- Extract Questions Safely --------
 
-        # Remove markdown if model adds it
-        cleaned = re.sub(r"```json|```", "", raw_text).strip()
+        lines = raw_text.split("\n")
 
-        # Find first JSON array safely
-        start = cleaned.find("[")
-        end = cleaned.rfind("]")
+        questions = []
 
-        if start == -1 or end == -1:
+        for line in lines:
+            line = line.strip()
+
+            # Skip empty lines
+            if not line:
+                continue
+
+            # Skip reasoning/checklist/debug lines
+            if (
+                line.startswith("*")
+                or line.startswith("[")
+                or line.startswith("]")
+                or "Valid JSON" in line
+                or "Pass" in line
+                or "Constraint Check" in line
+                or "Starts with" in line
+                or "Ends with" in line
+                or "Simple string" in line
+                or "markdown" in line.lower()
+                or "json" in line.lower()
+            ):
+                continue
+
+            # Remove bullets / numbering
+            line = line.lstrip("-•1234567890. ")
+
+            # Remove quotes/comma
+            cleaned = line.strip('",')
+
+            # Keep only question-like lines
+            if (
+                len(cleaned) > 15
+                and (
+                    cleaned.startswith("Explain")
+                    or cleaned.startswith("Describe")
+                    or cleaned.startswith("Discuss")
+                    or cleaned.startswith("Differentiate")
+                    or cleaned.startswith("Compare")
+                    or cleaned.startswith("What")
+                    or cleaned.startswith("How")
+                    or cleaned.startswith("Why")
+                    or cleaned.startswith("Define")
+                )
+            ):
+                questions.append(cleaned)
+
+        # Remove duplicates
+        questions = list(dict.fromkeys(questions))
+
+        # Limit to requested number
+        questions = questions[:num_questions]
+
+        # Final fallback
+        if not questions:
             return jsonify({
-                "error": "No valid JSON array found",
-                "raw_output": cleaned
+                "error": "Could not extract questions",
+                "raw_output": raw_text
             }), 500
-
-        json_text = cleaned[start:end + 1]
-
-        try:
-            questions = json.loads(json_text)
-
-        except json.JSONDecodeError:
-            # Fallback parser for bad free-tier outputs
-            lines = json_text.split("\n")
-
-            questions = []
-
-            for line in lines:
-                line = line.strip()
-
-                if not line:
-                    continue
-
-                line = line.strip('",')
-
-                if len(line) > 5:
-                    questions.append(line)
 
         return jsonify({"questions": questions})
 
