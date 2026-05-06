@@ -184,6 +184,7 @@ def export_docx():
 def generate_questions():
     try:
         data = request.get_json(force=True)
+
         page_text = data.get("pageText", "")
         num_questions = data.get("num_questions", 5)
         marks = data.get("marks", 10)
@@ -193,29 +194,27 @@ def generate_questions():
             return jsonify({"error": "pageText is required"}), 400
 
         prompt = f"""
-Return ONLY valid JSON.
-Do NOT add markdown or ```.
+Generate {num_questions} university exam questions from PAGE_TEXT.
 
-Generate {num_questions} university exam-oriented questions
-from the given PAGE_TEXT.
+IMPORTANT RULES:
+- Return ONLY valid JSON
+- No markdown
+- No explanation
+- No ```json
+- Output must start with [
+- Output must end with ]
+- Each item must be a simple string
+- Do not use brackets inside questions
+- Do not use numbering
 
-Guidelines:
-- Questions must be suitable for {marks}-mark answers
-- Difficulty: {difficulty}
-- Use clear, direct exam-style wording
-- Do NOT add answers
-- do not add any special characters just return simple questiosn
-- do not add ( ) or any brackets in the questions
-
-Return format:
+Example:
 [
-  "Question 1",
-  "Question 2",
-  "Question 3"
+  "Explain operating system functions",
+  "Describe process scheduling"
 ]
 
 PAGE_TEXT:
-\"\"\"{page_text}\"\"\"
+{page_text[:12000]}
 """
 
         response = model.generate_content(prompt)
@@ -223,27 +222,57 @@ PAGE_TEXT:
         if not response.text:
             return jsonify({"error": "Empty response from Gemini"}), 500
 
-        raw_text = response.text
+        raw_text = response.text.strip()
+
         print("RAW GEMINI QUESTIONS OUTPUT:\n", raw_text)
 
-        import re, json
+        import re
+        import json
 
-        # Extract JSON array safely
-        match = re.search(r"\[.*\]", raw_text, re.DOTALL)
-        if not match:
-            return jsonify({"error": "No JSON array found in Gemini output"}), 500
+        # Remove markdown if model adds it
+        cleaned = re.sub(r"```json|```", "", raw_text).strip()
 
-        questions = json.loads(match.group())
+        # Find first JSON array safely
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+
+        if start == -1 or end == -1:
+            return jsonify({
+                "error": "No valid JSON array found",
+                "raw_output": cleaned
+            }), 500
+
+        json_text = cleaned[start:end + 1]
+
+        try:
+            questions = json.loads(json_text)
+
+        except json.JSONDecodeError:
+            # Fallback parser for bad free-tier outputs
+            lines = json_text.split("\n")
+
+            questions = []
+
+            for line in lines:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                line = line.strip('",')
+
+                if len(line) > 5:
+                    questions.append(line)
 
         return jsonify({"questions": questions})
 
     except Exception as e:
         print("ERROR generating questions:", str(e))
+
         return jsonify({
             "error": "Failed to generate questions",
             "details": str(e)
         }), 500
-
 
 
 if __name__ == "__main__":
