@@ -21,7 +21,7 @@ CORS(app)  # allow Streamlit (different port) to call this
 # ---- Gemini setup ----
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-model = genai.GenerativeModel("models/gemma-3n-e2b-it")  # or gemini-1.5-pro
+model = genai.GenerativeModel("models/gemma-4-31b-it")  # or gemini-1.5-pro
 
 
 # ---- Helper: extract text from webpage ----
