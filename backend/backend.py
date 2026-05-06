@@ -101,77 +101,73 @@ def answer_questions():
                 "error": "pageText and questions are required"
             }), 400
 
-        questions_block = "\n".join(
-            [f"{i+1}. {q}" for i, q in enumerate(questions)]
-        )
-
-        prompt = f"""
-Answer the following questions using ONLY the given text.
-
-Rules:
-- Give detailed paragraph answers
-- Around 150-250 words
-- No markdown
-- No JSON
-- No bullet points
-- Start every answer EXACTLY like this:
-
-Question:
-Answer:
-
-TEXT:
-{page_text[:12000]}
-
-QUESTIONS:
-{questions_block}
-"""
-
-        response = model.generate_content(prompt)
-
-        raw_text = response.text.strip()
-
-        print("RAW OUTPUT:")
-        print(raw_text)
-
-        import re
-
         qa_list = []
 
-        blocks = re.split(r"Question\s*:", raw_text)
+        for q in questions:
 
-        for block in blocks:
+            prompt = f"""
+Answer this question briefly from the text.
 
-            block = block.strip()
+TEXT:
+{page_text[:3000]}
 
-            if not block:
-                continue
+QUESTION:
+{q}
+"""
 
-            if "Answer:" in block:
+            response = model.generate_content(prompt)
 
-                parts = block.split("Answer:", 1)
+            answer = response.text.strip()
 
-                question = parts[0].strip()
-                answer = parts[1].strip()
+            # CLEANUP
+            import re
 
-            else:
+            # remove markdown
+            answer = re.sub(r"\*+", "", answer)
 
-                lines = block.split("\n")
+            # remove chain-of-thought style junk
+            bad_phrases = [
+                "Constraint Check",
+                "Wait,",
+                "Let's",
+                "I will",
+                "I should",
+                "Final check",
+                "Self-Correction",
+                "Drafting",
+                "Refining",
+                "Re-evaluating",
+                "Hypothesis",
+                "Decision:",
+                "Actually,"
+            ]
 
-                question = lines[0].strip()
-                answer = "\n".join(lines[1:]).strip()
+            cleaned_lines = []
 
-            question = re.sub(r"^\d+\.\s*", "", question)
+            for line in answer.split("\n"):
+
+                skip = False
+
+                for phrase in bad_phrases:
+                    if phrase.lower() in line.lower():
+                        skip = True
+                        break
+
+                if not skip:
+                    cleaned_lines.append(line)
+
+            answer = "\n".join(cleaned_lines).strip()
+
+            # limit garbage size
+            answer = answer[:1200]
 
             found = True
 
-            if (
-                "not clearly available" in answer.lower()
-                or len(answer) < 20
-            ):
+            if len(answer) < 15:
                 found = False
 
             qa_list.append({
-                "question": question,
+                "question": q,
                 "answer": answer,
                 "found": found
             })
