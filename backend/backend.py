@@ -119,47 +119,80 @@ QUESTION:
 
             answer = response.text.strip()
 
-            # CLEANUP
             import re
 
-            # remove markdown
-            answer = re.sub(r"\*+", "", answer)
-
-            # remove chain-of-thought style junk
-            bad_phrases = [
-                "Constraint Check",
-                "Wait,",
-                "Let's",
-                "I will",
-                "I should",
-                "Final check",
-                "Self-Correction",
-                "Drafting",
-                "Refining",
-                "Re-evaluating",
-                "Hypothesis",
-                "Decision:",
-                "Actually,"
+            # Remove major reasoning junk
+            patterns_to_remove = [
+                r"Source text provided:.*",
+                r"Input text:.*",
+                r"Constraint:.*",
+                r"Sentence \d+:.*",
+                r"Draft \d+:.*",
+                r"Brief\?.*",
+                r"From the text\?.*",
+                r"The text says:.*",
             ]
+
+            for pattern in patterns_to_remove:
+                answer = re.sub(pattern, "", answer, flags=re.IGNORECASE)
 
             cleaned_lines = []
 
             for line in answer.split("\n"):
 
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                bad_starts = [
+                    "Source",
+                    "Input",
+                    "Constraint",
+                    "Sentence",
+                    "Draft",
+                    "Brief",
+                    "Relevant",
+                    "Irrelevant",
+                    "The text says",
+                    "Question:",
+                    "TEXT:",
+                ]
+
                 skip = False
 
-                for phrase in bad_phrases:
-                    if phrase.lower() in line.lower():
+                for bad in bad_starts:
+                    if line.startswith(bad):
                         skip = True
                         break
+
+                # Skip quoted junk
+                if line.startswith('"') and line.endswith('"'):
+                    skip = True
+
+                # Skip stars/bullets
+                if line.startswith("*"):
+                    skip = True
 
                 if not skip:
                     cleaned_lines.append(line)
 
-            answer = "\n".join(cleaned_lines).strip()
+            answer = " ".join(cleaned_lines).strip()
 
-            # limit garbage size
-            answer = answer[:1200]
+            # Remove extra spaces
+            answer = re.sub(r"\s+", " ", answer)
+
+            # Keep only last proper sentence if repeated
+            sentences = answer.split(".")
+
+            if len(sentences) > 2:
+                answer = ".".join(sentences[-2:]).strip()
+
+            if answer and not answer.endswith("."):
+                answer += "."
+
+            # limit size
+            answer = answer[:500]
 
             found = True
 
