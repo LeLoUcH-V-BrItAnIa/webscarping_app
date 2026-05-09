@@ -106,14 +106,14 @@ def answer_questions():
         for q in questions:
 
             prompt = f"""
-Answer this question briefly from the text.
+            Answer this question briefly from the text.
 
-TEXT:
-{page_text[:3000]}
+            TEXT:
+            {page_text[:3000]}
 
-QUESTION:
-{q}
-"""
+            QUESTION:
+            {q}
+            """
 
             response = model.generate_content(prompt)
 
@@ -192,7 +192,7 @@ QUESTION:
                 answer += "."
 
             # limit size
-            answer = answer[:500]
+            answer = answer
 
             found = True
 
