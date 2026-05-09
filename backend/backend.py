@@ -109,7 +109,7 @@ def answer_questions():
             Answer this question briefly from the text.
 
             TEXT:
-            {page_text[:3000]}
+            {page_text[:500]}
 
             QUESTION:
             {q}
@@ -192,7 +192,7 @@ def answer_questions():
                 answer += "."
 
             # limit size
-            answer = answer
+            answer = answer[:500]
 
             found = True
 
