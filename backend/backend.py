@@ -107,9 +107,7 @@ def answer_questions():
 
             prompt = f"""
             Answer this question briefly from the text.
-
-            TEXT:
-            {page_text[:500]}
+            within 150 words
 
             QUESTION:
             {q}
